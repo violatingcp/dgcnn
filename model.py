@@ -17,9 +17,19 @@ import torch.nn.functional as F
 
 
 def knn(x, k):
-    inner = -2*torch.matmul(x.transpose(2, 1), x)
-    xx = torch.sum(x**2, dim=1, keepdim=True)
+    etaphi=x[:,:2,:]
+    pt=x[:,2:3,:]
+    pttrans = pt.transpose(2,1)
+    pt=pt.repeat(1,200,1)
+    pttrans=pttrans.repeat(1,1,200)
+    ptcom = torch.cat((pt.unsqueeze(3), pttrans.unsqueeze(3)), dim=3)
+    ptmin = torch.min(ptcom, dim=3)[0]
+    inner = -2*torch.matmul(etaphi.transpose(2, 1), etaphi)
+    xx = torch.sum(etaphi**2, dim=1, keepdim=True)
     pairwise_distance = -xx - inner - xx.transpose(2, 1)
+    #print pairwise_distance.shape
+    #pairwise_distance=pairwise_distance
+    #print pairwise_distance.shape
     idx = pairwise_distance.topk(k=k, dim=-1)[1]   # (batch_size, num_points, k)
     return idx
 
@@ -64,7 +74,7 @@ class ResBlock(nn.Module):
 
 
 class ResPointNet(nn.Module):
-    def __init__(self, output_channel=2):
+    def __init__(self, output_channel=40):
         super(PointNet, self).__init__()
         self.res1 = ResBlock(3, 64)
         self.res2 = ResBlock(64, 64)
@@ -88,7 +98,7 @@ class ResPointNet(nn.Module):
 
 
 class PointNet(nn.Module):
-    def __init__(self, output_channel=40):
+    def __init__(self, output_channel=2):
         super(PointNet, self).__init__()
         self.conv1 = nn.Conv1d(3, 64, kernel_size=1, bias=False)
         self.conv2 = nn.Conv1d(64, 64, kernel_size=1, bias=False)
@@ -119,7 +129,7 @@ class PointNet(nn.Module):
 
 
 class DGCNN(nn.Module):
-    def __init__(self, output_channel=40):
+    def __init__(self, output_channel=2):
         super(DGCNN, self).__init__()
         self.conv1 = nn.Conv2d(8, 64, kernel_size=1, bias=False)
         self.conv2 = nn.Conv2d(64, 64, kernel_size=1, bias=False)
@@ -138,7 +148,6 @@ class DGCNN(nn.Module):
         self.bn7 = nn.BatchNorm1d(256)
         self.dp2 = nn.Dropout()
         self.linear3 = nn.Linear(256, output_channel)
-        
 
     def forward(self, x):
         x = get_graph_feature(x)
@@ -154,4 +163,5 @@ class DGCNN(nn.Module):
         x = F.relu(self.bn7(self.linear2(x)))
         x = self.dp2(x)       
         x = self.linear3(x)
+        x = F.softmax(x)
         return x

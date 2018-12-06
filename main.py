@@ -20,7 +20,10 @@ from top_data import TopData
 from model import PointNet, ResPointNet, DGCNN
 import numpy as np
 from torch.utils.data import DataLoader
-
+from sklearn.metrics import roc_curve,auc,average_precision_score,roc_auc_score,accuracy_score
+import matplotlib
+matplotlib.use('agg')
+import matplotlib.pyplot as plt
 
 class IOStream():
     def __init__(self, path):
@@ -45,6 +48,51 @@ def _init_():
     os.system('cp main.py checkpoints'+'/'+args.exp_name+'/'+'main.py.backup')
     os.system('cp model.py checkpoints' + '/' + args.exp_name + '/' + 'model.py.backup')
 
+def rocauc(y,y_score):
+    fpr, tpr, thresholds = roc_curve(y_score, y)#,pos_label=2)
+    #print("BBB1:",fpr)
+    #print("BBB2:",tpr)
+    #tpr=1/tpr
+    #tpr=np.nan_to_num(tpr)
+    #print("BBB3:",tpr)
+    roc_auc = auc(fpr, tpr)
+    print("average_precision_score : " + str(average_precision_score(y_score, y)))
+    print("roc_auc_score : " + str(roc_auc_score(y_score, y)))
+    #print("accuracy : " + str(accuracy_score(y_score, y)))
+    plt.figure()
+    plt.plot(fpr, tpr, color='darkorange', lw=1, label='ROC curve (area = %0.2f)' % roc_auc)
+    plt.plot([0, 1], [0, 1], color='navy', linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver operating characteristic')
+    plt.legend(loc="lower right")
+    plt.savefig('roc.png')
+    
+def eval(args, io, model,device):
+    #device = torch.device("cpu")
+    #model = DGCNN().to(device)
+    test_loader = DataLoader(TopData(partition='test', num_points=200),batch_size=args.test_batch_size, shuffle=True, drop_last=False)
+    labels=np.array([])
+    outputs=np.array([])
+    count = 0.0
+    test_acc = 0.0
+    batch_size=args.test_batch_size
+    for data, label in test_loader:
+        data, label = data.to(device), label.to(device).squeeze()
+        data = data.permute(0, 2, 1)
+        output = model(data)#[:,:1].detach().numpy()
+        preds = output.max(dim=1)[1]
+        output = output.max(dim=1)[0].cpu().detach().numpy()
+        outputs = np.append(outputs,output)
+        labels  = np.append(labels,label)
+        count += batch_size
+        test_acc += (preds == label).sum().item()
+        #print(test_acc,"!!!",output)
+    outstr = 'acc: %.6f'%(test_acc*1.0/count)
+    io.cprint(outstr)
+    rocauc(outputs,labels)
 
 def train(args, io):
     train_loader = DataLoader(TopData(partition='train', num_points=200),batch_size=args.batch_size, shuffle=True, drop_last=True)
@@ -79,9 +127,10 @@ def train(args, io):
             opt.zero_grad()
             logits = model(data)
             loss = F.cross_entropy(logits, label)
+            #loss = loss_fn(logits,label)
             loss.backward()
             opt.step()
-            preds = logits.max(dim=1)[1]
+            preds  = logits.max(dim=1)[1]
             count += batch_size
             train_loss += loss.item() * batch_size
             train_acc += (preds == label).sum().item()
@@ -109,6 +158,7 @@ def train(args, io):
         if test_acc >= best_test_acc:
             best_test_acc = test_acc
             torch.save(model, 'checkpoints/%s/models/model.t7' % args.exp_name)
+    eval(args,io,model,device)
 
 
 if __name__ == "__main__":
@@ -120,7 +170,7 @@ if __name__ == "__main__":
                         help='Size of batch)')
     parser.add_argument('--test_batch_size', type=int, default=20, metavar='batch_size',
                         help='Size of batch)')
-    parser.add_argument('--epochs', type=int, default=250, metavar='N',
+    parser.add_argument('--epochs', type=int, default=15, metavar='N',
                         help='number of episode to train ')
     parser.add_argument('--use_sgd', action='store_true', default=False,
                         help='Use SGD')
