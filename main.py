@@ -84,7 +84,9 @@ def eval(args, io, model,device):
         data = data.permute(0, 2, 1)
         output = model(data)#[:,:1].detach().numpy()
         preds = output.max(dim=1)[1]
-        output = output.max(dim=1)[0].cpu().detach().numpy()
+        output = output[:,1:2].cpu().detach().numpy()
+        print(output.shape,output)
+        print(label.shape,label)
         outputs = np.append(outputs,output)
         labels  = np.append(labels,label)
         count += batch_size
